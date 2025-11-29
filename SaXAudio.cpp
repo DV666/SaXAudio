@@ -430,6 +430,7 @@ namespace SaXAudio
     {
         INT32 bankID = 0;
         AudioVoice* voice = nullptr;
+        bool shouldCheckRemoval = false;
 
         {
             // Étape 1 : retirer proprement la voix
@@ -459,17 +460,28 @@ namespace SaXAudio
             }
 
             voice->Reset();
-            m_voices.erase(it);
+
+            // CRITICAL FIX: Don't erase yet - just set to nullptr to avoid XAudio2 callbacks during lock
+            m_voices[voiceID] = nullptr;
 
             // Gestion du pool
             if (g_inactiveVoices.size() >= MAX_POOL_SIZE)
                 g_trashBin.push_back(voice);
             else
                 g_inactiveVoices.push_back(voice);
+
+            // Check if we should remove bank (will check again under bankMutex)
+            shouldCheckRemoval = (bankID > 0);
+        }
+
+        // NOW erase safely outside the lock
+        {
+            std::lock_guard<std::recursive_mutex> lock(m_voiceMutex);
+            m_voices.erase(voiceID);
         }
 
         // Étape 2 : hors de tout verrou voix
-        if (bankID <= 0) return;
+        if (!shouldCheckRemoval) return;
 
         bool shouldRemove = false;
         {
@@ -477,15 +489,20 @@ namespace SaXAudio
             auto it_bank = m_bank.find(bankID);
             if (it_bank != m_bank.end() && it_bank->second.autoRemove)
             {
-                // Vérifie sans re-locker m_voiceMutex
-                for (auto& pair : m_voices)
+                // CRITICAL FIX: Use a snapshot approach - check voice count without re-locking
+                shouldRemove = true;
+
                 {
-                    if (pair.second && pair.second->BankID == bankID)
+                    std::lock_guard<std::recursive_mutex> voiceLock(m_voiceMutex);
+                    // Quick check: is there any voice using this bank?
+                    for (const auto& pair : m_voices)
                     {
-                        shouldRemove = false;
-                        break;
+                        if (pair.second && pair.second->BankID == bankID)
+                        {
+                            shouldRemove = false;
+                            break;
+                        }
                     }
-                    shouldRemove = true;
                 }
             }
         }
@@ -769,7 +786,7 @@ namespace SaXAudio
     void SaXAudio::Update()
     {
         debugFrameCount++;
-        if (debugFrameCount > 600)
+        if (debugFrameCount > 300)
         {
             debugFrameCount = 0;
 
@@ -785,9 +802,6 @@ namespace SaXAudio
             }
 
             // 2. VIDAGE DU PURGATOIRE (La correction du FREEZE)
-            // On déplace les voix à détruire dans un vecteur local, puis on libère le lock.
-            // Ainsi, DestroyVoicePhysical est appelé SANS verrou, et peut prendre tout le temps qu'il veut.
-
             vector<AudioVoice*> toDestroy;
             {
                 std::lock_guard<std::recursive_mutex> vLock(m_voiceMutex);
@@ -834,8 +848,11 @@ namespace SaXAudio
                 " | Buffers: " + to_string(buffersCount) +
                 " | RAM: " + to_string(ramUsage) + " MB\n";
             OutputDebugStringA(stats.c_str());
+
+            return;  // <-- CRITICAL: Exit early to avoid garbage collection processing
         }
 
+        // Process garbage collection ONLY outside the 600-frame periodic cleanup
         std::vector<INT32> processQueue;
         {
             std::lock_guard<std::recursive_mutex> lock(m_gcMutex);

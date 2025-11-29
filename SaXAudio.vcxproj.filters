@@ -53,10 +53,14 @@
     <ClCompile Include="Fader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="cpp SaXAudio.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="SaXAudio.def">
       <Filter>Source Files</Filter>
     </None>
+    <None Include="SaXAudio.vcxproj.fixed" />
   </ItemGroup>
 </Project>
