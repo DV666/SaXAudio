@@ -86,6 +86,7 @@ namespace SaXAudio
         if (BankData->decodedSamples <= atSample)
         {
             // Waiting for some decoded samples to not read garbage
+            IsLoading = true;
             thread wait(WaitForDecoding, this);
             wait.detach();
         }
@@ -100,31 +101,56 @@ namespace SaXAudio
 
     void AudioVoice::WaitForDecoding(AudioVoice* voice)
     {
-        Log(voice->BankID, voice->VoiceID, "[Start] Waiting for decoded data");
-        unique_lock<mutex> lock(voice->BankData->decodingMutex);
-        if (voice->BankData->decodedSamples == 0)
+        // 1. SAUVEGARDE LOCALE (CRITIQUE)
+        INT32 localVoiceID = voice->VoiceID;
+        INT32 localBankID = voice->BankID;
+
+        Log(localBankID, localVoiceID, "[Start] Waiting for decoded data");
+
+        // Utilisation d'un scope pour contrôler la durée de vie du lock
         {
-            if (!voice->BankData->decodingPerform.wait_for(lock, chrono::milliseconds(500), [voice] { return voice->BankData->decodedSamples > voice->Buffer.PlayBegin; }))
+            unique_lock<mutex> lock(voice->BankData->decodingMutex);
+
+            if (voice->BankData->decodedSamples == 0)
             {
-                Log(voice->BankID, voice->VoiceID, " ERROR | [Start] Failed waiting for decoded data, timed out");
-                SaXAudio::Instance.RemoveVoice(voice->VoiceID);
-                return;
+                if (!voice->BankData->decodingPerform.wait_for(lock, chrono::milliseconds(500), [voice] { return voice->BankData->decodedSamples > voice->Buffer.PlayBegin; }))
+                {
+                    Log(localBankID, localVoiceID, " ERROR | [Start] Failed waiting for decoded data, timed out");
+
+                    // On libère le lock manuellement AVANT de toucher à IsLoading
+                    lock.unlock();
+
+                    voice->IsLoading = false;
+                    SaXAudio::Instance.ScheduleVoiceRemoval(localVoiceID);
+                    return;
+                }
             }
+            // Le lock sera détruit ici, à la fin du scope {}, DONC le mutex est libéré.
         }
 
-        // Sound has been paused while we were waiting
-        if (voice->m_pauseStack > 0) return;
+        // À partir d'ici, on ne détient plus aucun lock sur BankData.
+
+        if (voice->GetPauseStack() > 0)
+        {
+            voice->IsLoading = false;
+            return;
+        }
 
         HRESULT hr = voice->SourceVoice->Start();
         if (FAILED(hr))
         {
-            Log(voice->BankID, voice->VoiceID, "[Start] Failed starting", hr);
-            SaXAudio::Instance.RemoveVoice(voice->VoiceID);
+            Log(localBankID, localVoiceID, "[Start] Failed starting", hr);
+            voice->IsLoading = false;
+            SaXAudio::Instance.ScheduleVoiceRemoval(localVoiceID);
         }
         else
         {
             voice->m_tempFlush = 0;
-            Log(voice->BankID, voice->VoiceID, "[Start] Successfully waited for decoded data");
+            Log(localBankID, localVoiceID, "[Start] Successfully waited for decoded data");
+
+            // C'EST LA DERNIÈRE LIGNE. Le lock est déjà mort depuis longtemps.
+            // Le Main Thread peut maintenant supprimer la banque sans faire crasher ce thread.
+            voice->IsLoading = false;
         }
     }
 
@@ -541,6 +567,9 @@ namespace SaXAudio
         LoopEnd = 0;
         Looping = false;
         IsPlaying = false;
+        IsLoading = false;
+
+        EffectData.Reset();
     }
 
     void AudioVoice::OnFadeVolume(INT64 voiceID, UINT32 count, FLOAT* newValues, BOOL hasFinished)
@@ -617,7 +646,6 @@ namespace SaXAudio
             return;
         }
         Log(BankID, VoiceID, "[OnBufferEnd] Voice finished playing");
-
-        SaXAudio::Instance.RemoveVoice(VoiceID);
+        SaXAudio::Instance.ScheduleVoiceRemoval(VoiceID);
     }
 }

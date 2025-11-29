@@ -48,6 +48,12 @@ namespace SaXAudio
             FXEQ_DEFAULT_BANDWIDTH
         };
         FXECHO_PARAMETERS echo = { 0 };
+
+        UINT32 reverbFadeID = 0;
+        UINT32 eqFadeID = 0;
+        UINT32 echoFadeID = 0;
+
+        void Reset();
     };
 
     struct BusData : EffectData

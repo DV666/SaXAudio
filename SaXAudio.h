@@ -25,6 +25,7 @@
 #include "Includes.h"
 #include "Structs.h"
 #include "AudioVoice.h"
+#include <mutex>
 
 namespace SaXAudio
 {
@@ -39,13 +40,13 @@ namespace SaXAudio
 
         unordered_map<INT32, BankData> m_bank;
         INT32 m_bankCounter = 1;
-        mutex m_bankMutex;
+        recursive_mutex m_bankMutex;
 
         list<Buffer> m_bufferPool;
 
         unordered_map<INT32, AudioVoice*> m_voices;
         INT32 m_voiceCounter = 1;
-        mutex m_voiceMutex;
+        recursive_mutex m_voiceMutex;
 
         // XAudio will continue to send callbacks for a little while even after we destroyed the source voice
         // This is why we use a pool and don't delete the voices, it is not possible to know when it's safe to do so
@@ -67,6 +68,8 @@ namespace SaXAudio
         SaXAudio(const SaXAudio&) = delete;
         SaXAudio& operator=(const SaXAudio&) = delete;
 
+        std::vector<INT32> m_garbageCollectionQueue; // La liste des voix à tuer
+        std::recursive_mutex m_gcMutex; // Pour éviter que les threads se marchent dessus
     public:
         static SaXAudio& Instance;
 
@@ -115,9 +118,16 @@ namespace SaXAudio
         UINT32 GetVoiceCount(const INT32 bankID = 0, const INT32 busID = 0);
         UINT32 GetBankCount();
 
+        void RemoveVoice(const INT32 voiceID);
+
+        // Ajoutez cette fonction pour que le thread secondaire puisse l'utiliser
+        void ScheduleVoiceRemoval(INT32 voiceID);
+
+        // Cette fonction devra être appelée à chaque frame (dans votre boucle principale)
+        void Update();
+
     private:
         static void DecodeOgg(const INT32 bankID, stb_vorbis* vorbis);
-        void RemoveVoice(const INT32 voiceID);
         void CreateEffectChain(IXAudio2Voice* voice, EffectData* data);
 
         static void OnFadeReverb(INT64 context, UINT32 count, FLOAT* newValues, BOOL hasFinished);

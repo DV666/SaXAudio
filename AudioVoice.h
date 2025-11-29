@@ -62,6 +62,7 @@ namespace SaXAudio
 
         atomic<BOOL> Looping = false;
         atomic<BOOL> IsPlaying = false;
+        atomic<BOOL> IsLoading = false;
         BOOL IsProtected = false;
 
         BOOL Start(const UINT32 atSample = 0, BOOL flush = true);
