@@ -48,6 +48,7 @@ namespace SaXAudio
             FXEQ_DEFAULT_BANDWIDTH
         };
         FXECHO_PARAMETERS echo = { 0 };
+        BOOL effectsInitialized = false;
     };
 
     struct BusData : EffectData

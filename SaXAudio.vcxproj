@@ -95,8 +95,8 @@
       <ModuleDefinitionFile>SaXAudio.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent>
-      <Command>copy /y "$(OutputPath)$(TargetFileName)" "D:\ProgramFiles\Steam\steamapps\common\FINAL FANTASY IX\x86\FF9_Data\Plugins\$(TargetFileName)"
-copy /y "$(OutputPath)$(TargetFileName)" "D:\Projects\Memoria\Assembly-CSharp\Global\Sound\SaXAudio\x86\$(TargetFileName)"</Command>
+      <Command>if exist "D:\SteamLibrary\steamapps\common\FINAL FANTASY IX\x86\FF9_Data\Plugins" copy /y "$(OutputPath)$(TargetFileName)" "D:\SteamLibrary\steamapps\common\FINAL FANTASY IX\x86\FF9_Data\Plugins"
+if exist "D:\Projects\Memoria\Assembly-CSharp\Global\Sound\SaXAudio\x86" copy /y "$(OutputPath)$(TargetFileName)" "D:\Projects\Memoria\Assembly-CSharp\Global\Sound\SaXAudio\x86"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -120,8 +120,8 @@ copy /y "$(OutputPath)$(TargetFileName)" "D:\Projects\Memoria\Assembly-CSharp\Gl
       <ModuleDefinitionFile>SaXAudio.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent>
-      <Command>copy /y "$(OutputPath)$(TargetFileName)" "D:\ProgramFiles\Steam\steamapps\common\FINAL FANTASY IX\x86\FF9_Data\Plugins\$(TargetFileName)"
-copy /y "$(OutputPath)$(TargetFileName)" "D:\Projects\Memoria\Assembly-CSharp\Global\Sound\SaXAudio\x86\$(TargetFileName)"</Command>
+      <Command>if exist "D:\SteamLibrary\steamapps\common\FINAL FANTASY IX\x86\FF9_Data\Plugins" copy /y "$(OutputPath)$(TargetFileName)" "D:\SteamLibrary\steamapps\common\FINAL FANTASY IX\x86\FF9_Data\Plugins"
+if exist "D:\Projects\Memoria\Assembly-CSharp\Global\Sound\SaXAudio\x86" copy /y "$(OutputPath)$(TargetFileName)" "D:\Projects\Memoria\Assembly-CSharp\Global\Sound\SaXAudio\x86"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -141,8 +141,8 @@ copy /y "$(OutputPath)$(TargetFileName)" "D:\Projects\Memoria\Assembly-CSharp\Gl
       <ModuleDefinitionFile>SaXAudio.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent>
-      <Command>copy /y "$(OutputPath)$(TargetFileName)" "D:\ProgramFiles\Steam\steamapps\common\FINAL FANTASY IX\x64\FF9_Data\Plugins\$(TargetFileName)"
-copy /y "$(OutputPath)$(TargetFileName)" "D:\Projects\Memoria\Assembly-CSharp\Global\Sound\SaXAudio\x64\$(TargetFileName)"</Command>
+      <Command>if exist "D:\SteamLibrary\steamapps\common\FINAL FANTASY IX\x64\FF9_Data\Plugins" copy /y "$(OutputPath)$(TargetFileName)" "D:\SteamLibrary\steamapps\common\FINAL FANTASY IX\x64\FF9_Data\Plugins"
+if exist "D:\Projects\Memoria\Assembly-CSharp\Global\Sound\SaXAudio\x64" copy /y "$(OutputPath)$(TargetFileName)" "D:\Projects\Memoria\Assembly-CSharp\Global\Sound\SaXAudio\x64"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -166,8 +166,8 @@ copy /y "$(OutputPath)$(TargetFileName)" "D:\Projects\Memoria\Assembly-CSharp\Gl
       <ModuleDefinitionFile>SaXAudio.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent>
-      <Command>copy /y "$(OutputPath)$(TargetFileName)" "D:\ProgramFiles\Steam\steamapps\common\FINAL FANTASY IX\x64\FF9_Data\Plugins\$(TargetFileName)"
-copy /y "$(OutputPath)$(TargetFileName)" "D:\Projects\Memoria\Assembly-CSharp\Global\Sound\SaXAudio\x64\$(TargetFileName)"</Command>
+      <Command>if exist "D:\SteamLibrary\steamapps\common\FINAL FANTASY IX\x64\FF9_Data\Plugins" copy /y "$(OutputPath)$(TargetFileName)" "D:\SteamLibrary\steamapps\common\FINAL FANTASY IX\x64\FF9_Data\Plugins"
+if exist "D:\Projects\Memoria\Assembly-CSharp\Global\Sound\SaXAudio\x64" copy /y "$(OutputPath)$(TargetFileName)" "D:\Projects\Memoria\Assembly-CSharp\Global\Sound\SaXAudio\x64"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>

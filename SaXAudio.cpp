@@ -1,4 +1,4 @@
-﻿// MIT License
+// MIT License
 // 
 // Copyright(c) 2025 SamsamTS
 // 
@@ -120,12 +120,108 @@ namespace SaXAudio
         return true;
     }
 
+    void ClearVoiceEffects(AudioVoice* voice)
+    {
+        if (!voice || !voice->SourceVoice) return;
+        
+        // First disable all effects
+        for (int i = 0; i < 3; i++)
+        {
+            voice->SourceVoice->DisableEffect(i);
+        }
+
+        // Then release COM objects
+        for (int i = 0; i < 3; i++)
+        {
+            if (voice->EffectData.descriptors[i].pEffect)
+            {
+                voice->EffectData.descriptors[i].pEffect->Release();
+                voice->EffectData.descriptors[i].pEffect = nullptr;
+            }
+        }
+        voice->EffectData.effectChain.pEffectDescriptors = nullptr;
+        voice->EffectData.effectChain.EffectCount = 0;
+    }
+
     void SaXAudio::Release()
     {
         if (!m_XAudio)
             return;
 
         m_XAudio->StopEngine();
+
+        // Release all voices' effects BEFORE destroying voices
+        for (auto& it : m_voices)
+        {
+            AudioVoice* voice = it.second;
+            if (voice && voice->SourceVoice)
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    voice->SourceVoice->DisableEffect(i);
+                }
+            }
+        }
+
+        // Release all pooled voices' effects
+        queue<AudioVoice*> tempPool = m_voicePool;
+        while (!tempPool.empty())
+        {
+            AudioVoice* voice = tempPool.front();
+            tempPool.pop();
+            
+            for (int i = 0; i < 3; i++)
+            {
+                if (voice->EffectData.descriptors[i].pEffect)
+                {
+                    voice->EffectData.descriptors[i].pEffect->Release();
+                    voice->EffectData.descriptors[i].pEffect = nullptr;
+                }
+            }
+        }
+
+        // Release all buses effects first
+        for (auto& it : m_buses)
+        {
+            BusData* bus = &it.second;
+            if (bus->voice)
+            {
+                // Disable effects first
+                for (int i = 0; i < 3; i++)
+                {
+                    bus->voice->DisableEffect(i);
+                }
+            }
+            // Then release COM objects
+            for (int i = 0; i < 3; i++)
+            {
+                if (bus->descriptors[i].pEffect)
+                {
+                    bus->descriptors[i].pEffect->Release();
+                    bus->descriptors[i].pEffect = nullptr;
+                }
+            }
+        }
+
+        // Release mastering bus effects
+        if (m_masteringBus.voice)
+        {
+            // Disable effects first
+            for (int i = 0; i < 3; i++)
+            {
+                m_masteringBus.voice->DisableEffect(i);
+            }
+        }
+        // Then release COM objects
+        for (int i = 0; i < 3; i++)
+        {
+            if (m_masteringBus.descriptors[i].pEffect)
+            {
+                m_masteringBus.descriptors[i].pEffect->Release();
+                m_masteringBus.descriptors[i].pEffect = nullptr;
+            }
+        }
+
         m_XAudio->Release();
         m_XAudio = nullptr;
 
@@ -326,6 +422,25 @@ namespace SaXAudio
         {
             if (it.second->BusID == busID)
                 it.second->Stop();
+        }
+
+        // Disable all effects first before releasing
+        if (bus->voice)
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                bus->voice->DisableEffect(i);
+            }
+        }
+
+        // Release COM objects
+        for (int i = 0; i < 3; i++)
+        {
+            if (bus->descriptors[i].pEffect)
+            {
+                bus->descriptors[i].pEffect->Release();
+                bus->descriptors[i].pEffect = nullptr;
+            }
         }
 
         bus->voice->DestroyVoice();
@@ -530,25 +645,32 @@ namespace SaXAudio
         voice->EffectData.descriptors[1] = { nullptr, false, data->channels };
         voice->EffectData.descriptors[2] = { nullptr, false, data->channels };
 
-        HRESULT hr = XAudio2CreateReverb(&voice->EffectData.descriptors[CHAIN_REVERB].pEffect);
-        if (FAILED(hr))
+        // Only create effects if they haven't been created yet
+        if (!voice->EffectData.effectsInitialized)
         {
-            Log(bankID, m_voiceCounter, "Failed to create reverb effect", hr);
+            HRESULT hr = XAudio2CreateReverb(&voice->EffectData.descriptors[CHAIN_REVERB].pEffect);
+            if (FAILED(hr))
+            {
+                Log(bankID, m_voiceCounter, "Failed to create reverb effect", hr);
+            }
+
+            hr = CreateFX(__uuidof(FXEQ), &voice->EffectData.descriptors[CHAIN_EQ].pEffect);
+            if (FAILED(hr))
+            {
+                Log(bankID, m_voiceCounter, "Failed to create EQ effect", hr);
+            }
+
+            FXECHO_INITDATA init = { 3000 };
+            hr = CreateFX(__uuidof(FXEcho), &voice->EffectData.descriptors[CHAIN_ECHO].pEffect, &init, sizeof(FXECHO_INITDATA));
+            if (FAILED(hr))
+            {
+                Log(bankID, m_voiceCounter, "Failed to create echo effect", hr);
+            }
+
+            voice->EffectData.effectsInitialized = true;
         }
 
-        hr = CreateFX(__uuidof(FXEQ), &voice->EffectData.descriptors[CHAIN_EQ].pEffect);
-        if (FAILED(hr))
-        {
-            Log(bankID, m_voiceCounter, "Failed to create EQ effect", hr);
-        }
-
-        FXECHO_INITDATA init = { 3000 };
-        hr = CreateFX(__uuidof(FXEcho), &voice->EffectData.descriptors[CHAIN_ECHO].pEffect, &init, sizeof(FXECHO_INITDATA));
-        if (FAILED(hr))
-        {
-            Log(bankID, m_voiceCounter, "Failed to create echo effect", hr);
-        }
-
+        HRESULT hr;
         if (bus && bus->voice)
         {
             XAUDIO2_SEND_DESCRIPTOR sendDesc { 0, bus->voice };
@@ -563,10 +685,11 @@ namespace SaXAudio
 
         if (FAILED(hr))
         {
-            voice->Reset();
+            voice->SourceVoice = nullptr;
             Log(bankID, m_voiceCounter, "Failed to create voice on bus " + to_string(busID), hr);
             return nullptr;
         }
+
         voice->BankData = data;
 
         // Submit audio buffer
@@ -1004,7 +1127,7 @@ namespace SaXAudio
         };
 
         INT64 context = isBus ? -voiceID : voiceID;
-        Fader::Instance.StartFadeMulti(12, current, targets, fade, OnFadeEcho, context);
+        Fader::Instance.StartFadeMulti(3, current, targets, fade, OnFadeEcho, context);
     }
 
     void SaXAudio::RemoveEcho(const INT32 voiceID, const BOOL isBus, const FLOAT fade)
@@ -1023,14 +1146,14 @@ namespace SaXAudio
             return;
         }
 
-        FLOAT* current = new FLOAT[12]
+        FLOAT* current = new FLOAT[3]
         {
             data->echo.WetDryMix,
             data->echo.Feedback,
             data->echo.Delay
         };
 
-        FLOAT* targets = new FLOAT[12] { 0 };
+        FLOAT* targets = new FLOAT[3] { 0 };
 
         INT64 context = isBus ? -voiceID : voiceID;
         Fader::Instance.StartFadeMulti(3, current, targets, fade, OnFadeEchoDisable, context);
@@ -1174,14 +1297,13 @@ namespace SaXAudio
                 onFinished.detach();
             }
 
-            // Auto remove
+            // Auto remove logic
             BankData* data = GetEntry(data, m_bank, bankID);
             if (data && data->autoRemove)
             {
                 autoRemove = true;
                 for (auto& it : m_voices)
                 {
-                    // Look if any other voice is still playing the bank entry
                     if (it.second->BankID == bankID)
                     {
                         autoRemove = false;
@@ -1195,7 +1317,7 @@ namespace SaXAudio
             m_voicePool.push(voice);
             m_voices.erase(voiceID);
 
-            Log(voice->BankID, voiceID, "[RemoveVoice] Deleted voice");
+            Log(bankID, voiceID, "[RemoveVoice] Deleted voice");
         }
 
         if (autoRemove)
@@ -1232,7 +1354,6 @@ namespace SaXAudio
             Log(0, 0, "Failed to set effect chain", hr);
         }
     }
-
 
     void SaXAudio::OnFadeReverb(INT64 context, UINT32 count, FLOAT* newValues, BOOL hasFinished)
     {

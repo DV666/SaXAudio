@@ -528,6 +528,21 @@ namespace SaXAudio
 
         m_tempFlush = 0;
 
+        // Disable effects before reusing the voice
+        if (SourceVoice)
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                SourceVoice->DisableEffect(i);
+            }
+        }
+
+        // Do NOT release effect resources - they will be reused on next voice creation
+        // Only clear the effect chain structure
+        EffectData.effectChain.EffectCount = 0;
+        EffectData.effectChain.pEffectDescriptors = nullptr;
+        // Keep effectsInitialized flag - effects are persistent!
+
         Buffer = { 0 };
         BankID = 0;
         BusID = 0;
