@@ -49,6 +49,7 @@
 #include <chrono>
 #include <string>
 #include <fstream>
+#include <random>
 using namespace std;
 
 #define STB_VORBIS_HEADER_ONLY
