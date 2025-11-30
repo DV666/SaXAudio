@@ -342,7 +342,7 @@ namespace SaXAudio
     {
         lock_guard<mutex> lock(m_bankMutex);
 
-        Log(bankID, 0, "[RemoveBankEntry]");
+        Log(bankID, 0, "[RemoveBankEntry] Scheduled for delete");
 
         BankData* data = GetEntry(data, m_bank, bankID);
         if (!data) return;
@@ -351,16 +351,15 @@ namespace SaXAudio
 
         if (m_XAudio)
         {
-            // Let voices finish before removing
+            // Si une voix l'utilise encore, on annule (le système autoRemove repassera plus tard)
             for (auto& it : m_voices)
             {
-                if (it.second->BankID == bankID)
-                {
-                    // We let autoRemove delete the bankID
-                    return;
-                }
+                if (it.second->BankID == bankID) return;
             }
         }
+
+        INT64 deleteTime = GetTime() + 3000;
+        m_garbageBanks.push_back({ bankID, deleteTime });
 
         // Free the audio buffer
         if (data->buffer)
@@ -735,24 +734,33 @@ namespace SaXAudio
         if (!m_XAudio) return;
 
         lock_guard<mutex> lock(m_voiceMutex);
+
         IXAudio2Voice* xVoice = nullptr;
         EffectData* data = nullptr;
         AudioVoice* audioVoice = nullptr;
-        UINT32 channels = 2; // Valeur par défaut de sécurité
+        UINT32 channels = 2;
 
-        // --- 1. Récupération & Détermination des canaux ---
         if (isBus)
         {
+            // GetBus utilise m_busMutex, donc pas de conflit avec m_voiceMutex. C'est OK.
             BusData* bus = SaXAudio::Instance.GetBus(voiceID);
             if (!bus || !bus->voice) return;
             data = bus;
             xVoice = bus->voice;
-            channels = SaXAudio::Instance.m_masterDetails.InputChannels; // Les bus sont souvent en 7.1 ou Stéréo
+            channels = SaXAudio::Instance.m_masterDetails.InputChannels;
         }
         else
         {
-            audioVoice = SaXAudio::Instance.GetVoice(voiceID);
+            // 2. ACCÈS DIRECT (SANS PASSER PAR GetVoice)
+            // On cherche manuellement dans la map car on a déjà le lock.
+            auto it = m_voices.find(voiceID);
+            if (it != m_voices.end())
+            {
+                audioVoice = it->second;
+            }
+
             if (!audioVoice || !audioVoice->SourceVoice) return;
+
             data = &audioVoice->EffectData;
             xVoice = audioVoice->SourceVoice;
             if (audioVoice->BankData) channels = audioVoice->BankData->channels;
@@ -955,7 +963,10 @@ namespace SaXAudio
         }
         else
         {
-            audioVoice = SaXAudio::Instance.GetVoice(voiceID);
+            // ACCÈS DIRECT
+            auto it = m_voices.find(voiceID);
+            if (it != m_voices.end()) audioVoice = it->second;
+
             if (!audioVoice || !audioVoice->SourceVoice) return;
             data = &audioVoice->EffectData;
             xVoice = audioVoice->SourceVoice;
@@ -1079,7 +1090,10 @@ namespace SaXAudio
         }
         else
         {
-            audioVoice = SaXAudio::Instance.GetVoice(voiceID);
+            // ACCÈS DIRECT
+            auto it = m_voices.find(voiceID);
+            if (it != m_voices.end()) audioVoice = it->second;
+
             if (!audioVoice || !audioVoice->SourceVoice) return;
             data = &audioVoice->EffectData;
             xVoice = audioVoice->SourceVoice;
@@ -1501,5 +1515,56 @@ namespace SaXAudio
         }
 
         OnFadeEcho(context, count, newValues, hasFinished);
+    }
+
+    void SaXAudio::Update()
+    {
+        // 1. Garbage Collector des Banques (Le Fix du crash _Mtx_unlock)
+        {
+            lock_guard<mutex> lock(m_bankMutex);
+
+            if (!m_garbageBanks.empty())
+            {
+                INT64 now = GetTime();
+                auto it = m_garbageBanks.begin();
+                while (it != m_garbageBanks.end())
+                {
+                    if (now >= it->deleteTime)
+                    {
+                        INT32 id = it->bankID;
+
+                        // Récupération sécurisée
+                        BankData* data = nullptr;
+                        // Note: ta macro GetEntry déclare une variable locale 'it_data', attention au scope.
+                        // On le fait manuellement ici pour être sûr.
+                        auto mapIt = m_bank.find(id);
+                        if (mapIt != m_bank.end()) data = &mapIt->second;
+
+                        if (data)
+                        {
+                            Log(id, 0, "[GC] Finalizing Bank deletion");
+
+                            // Suppression réelle du buffer audio
+                            if (data->buffer)
+                            {
+                                delete[] data->buffer;
+                                data->buffer = nullptr;
+                            }
+
+                            // Suppression de la banque (et destruction du decodingMutex)
+                            // C'est safe maintenant car WaitForDecoding est forcément fini depuis >1000ms
+                            m_bank.erase(id);
+                        }
+
+                        // On retire de la liste d'attente
+                        it = m_garbageBanks.erase(it);
+                    }
+                    else
+                    {
+                        ++it;
+                    }
+                }
+            }
+        }
     }
 }

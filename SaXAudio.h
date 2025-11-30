@@ -26,6 +26,8 @@
 #include "Structs.h"
 #include "AudioVoice.h"
 
+#define GetTime() chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count()
+
 namespace SaXAudio
 {
     class SaXAudio
@@ -76,6 +78,7 @@ namespace SaXAudio
 
         void StopEngine();
         void StartEngine();
+        void Update();
 
         void PauseAll(const FLOAT fade, const INT32 busID = 0);
         void ResumeAll(const FLOAT fade, const INT32 busID = 0);
@@ -112,6 +115,14 @@ namespace SaXAudio
         UINT32 GetBankCount();
 
     private:
+        struct GarbageBankEntry
+        {
+            INT32 bankID;
+            INT64 deleteTime;
+        };
+
+        vector<GarbageBankEntry> m_garbageBanks;
+
         static void DecodeOgg(const INT32 bankID, stb_vorbis* vorbis);
         void RemoveVoice(const INT32 voiceID);
         void CreateEffectChain(IXAudio2Voice* voice, EffectData* data);

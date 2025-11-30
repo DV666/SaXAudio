@@ -30,9 +30,6 @@
 #include <iomanip>
 #include <queue>
 
-#define GetTime() chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count()
-
-
 namespace SaXAudio
 {
     struct LogEntry
