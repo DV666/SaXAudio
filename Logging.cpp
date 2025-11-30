@@ -147,7 +147,7 @@ namespace SaXAudio
 
         {
             lock_guard<mutex> lock(g_logData.mutex);
-            g_logData.queue.push({ timestamp, bankID, voiceId, message, 0 });
+            g_logData.queue.push({ timestamp, bankID, voiceId, message, result });
         }
 
         g_logData.condition.notify_one();
