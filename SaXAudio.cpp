@@ -91,21 +91,21 @@ namespace SaXAudio
 
         string version = "Unknown";
         // Check which DLL is loaded
-        HMODULE hXAudio2 = GetModuleHandle("XAudio2_9.dll");
+        HMODULE hXAudio2 = GetModuleHandle(L"XAudio2_9.dll");
         if (hXAudio2)
         {
             version = "XAudio2 2.9";
         }
         else
         {
-            hXAudio2 = GetModuleHandle("XAudio2_8.dll");
+            hXAudio2 = GetModuleHandle(L"XAudio2_8.dll");
             if (hXAudio2)
             {
                 version = "XAudio2 2.8";
             }
             else
             {
-                hXAudio2 = GetModuleHandle("XAudio2_7.dll");
+                hXAudio2 = GetModuleHandle(L"XAudio2_7.dll");
                 if (hXAudio2)
                 {
                     version = "XAudio2 2.7";
@@ -224,14 +224,34 @@ namespace SaXAudio
             }
         }
 
+        // 3. Relâcher XAudio
         m_XAudio->Release();
         m_XAudio = nullptr;
 
-        while (!m_bank.empty())
+        lock_guard<mutex> lock(m_bankMutex); // Protection
+
+        // A. Vider la liste d'attente GC (s'il reste des trucs)
+        for (auto& item : m_garbageBanks)
         {
-            RemoveBankEntry(m_bank.begin()->first);
+            auto it = m_bank.find(item.bankID);
+            if (it != m_bank.end())
+            {
+                if (it->second.buffer) delete[] it->second.buffer;
+                m_bank.erase(it);
+            }
+        }
+        m_garbageBanks.clear();
+
+        // B. Vider les banques actives restantes
+        auto it = m_bank.begin();
+        while (it != m_bank.end())
+        {
+            // On supprime directement
+            if (it->second.buffer) delete[] it->second.buffer;
+            it = m_bank.erase(it);
         }
 
+        // 5. Vider le pool
         while (!m_voicePool.empty())
         {
             delete m_voicePool.front();
@@ -239,7 +259,6 @@ namespace SaXAudio
         }
 
         StopLogging();
-
         m_voices.clear();
         m_masteringBus.voice = nullptr;
     }
@@ -1510,13 +1529,14 @@ namespace SaXAudio
 
     void SaXAudio::Update()
     {
-        // 1. Garbage Collector des Banques (Le Fix du crash _Mtx_unlock)
+        // On récupère le temps une seule fois pour tout le monde
+        INT64 now = GetTime();
+        // 1. GARBAGE COLLECTOR DES BANQUES
         {
             lock_guard<mutex> lock(m_bankMutex);
 
             if (!m_garbageBanks.empty())
             {
-                INT64 now = GetTime();
                 auto it = m_garbageBanks.begin();
                 while (it != m_garbageBanks.end())
                 {
@@ -1524,22 +1544,22 @@ namespace SaXAudio
                     {
                         INT32 id = it->bankID;
 
+                        // Récupération sécurisée
                         BankData* data = nullptr;
                         auto mapIt = m_bank.find(id);
                         if (mapIt != m_bank.end()) data = &mapIt->second;
 
                         if (data)
                         {
-                            // --- FIX CRITIQUE : LE CALLBACK EST ICI ---
-                            // On est sur le Main Thread (via Update), donc on peut parler au C# sans crash.
+                            // Callback C# sécurisé (Main Thread)
                             if (data->onDecodedCallback)
                             {
                                 (*data->onDecodedCallback)(id, data->Oggbuffer);
                                 data->onDecodedCallback = nullptr;
                             }
-                            // ------------------------------------------
 
-                            Log(id, 0, "[GC] Finalizing Bank deletion");
+                            //Log(id, 0, "[GC] Finalizing Bank deletion");
+                            OutputDebugStringA("[GC] Finalizing Bank deletion");
 
                             if (data->buffer)
                             {
@@ -1547,7 +1567,6 @@ namespace SaXAudio
                                 data->buffer = nullptr;
                             }
 
-                            // Suppression sûre
                             m_bank.erase(id);
                         }
 
@@ -1559,6 +1578,33 @@ namespace SaXAudio
                     }
                 }
             }
+        }
+
+        // 2. MONITORING (Sorti du scope GC !)
+        if (now - m_lastStatLogTime > 2000) // Toutes les 2000ms (2 secondes)
+        {
+            m_lastStatLogTime = now;
+
+            // Lectures approximatives (sans lock pour éviter de bloquer le thread audio pour du debug)
+            size_t activeVoices = m_voices.size();
+            size_t poolSize = m_voicePool.size();
+            size_t loadedBanks = m_bank.size();
+            size_t pendingGC = 0;
+
+            // Pour lire la taille du GC, il faut un micro-lock car le vector n'est pas thread-safe
+            {
+                lock_guard<mutex> lock(m_bankMutex);
+                pendingGC = m_garbageBanks.size();
+            }
+
+            string stats = "[STATS] RAM Report:\n";
+            stats += "   > Voices Playing: " + to_string(activeVoices) + "\n";
+            stats += "   > Voice Pool:     " + to_string(poolSize) + "\n";
+            stats += "   > Loaded Banks:   " + to_string(loadedBanks) + "\n";
+            stats += "   > Pending GC:     " + to_string(pendingGC) + "\n";
+
+            // Envoi vers la fenêtre "Sortie" de Visual Studio
+            OutputDebugStringA(stats.c_str());
         }
     }
 }

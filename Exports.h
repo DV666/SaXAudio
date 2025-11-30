@@ -44,7 +44,10 @@ namespace SaXAudio
     /// Pause all playing voices
     /// </summary>
     EXPORT void StopEngine();
-
+    /// <summary>
+    /// GARBAGE COLLECTOR DES BANQUES
+    /// </summary>
+    EXPORT void Update();
 
     /// <summary>
     /// That's the "Just play the darn thing!" button for ya

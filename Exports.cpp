@@ -61,6 +61,11 @@ namespace SaXAudio
         SaXAudio::Instance.StopEngine();
     }
 
+    EXPORT void Update()
+    {
+        SaXAudio::Instance.Update();
+    }
+
     EXPORT INT32 PlayWavFile(const char* filePath, const INT32 busID)
     {
         SaXAudio::Instance.Init();

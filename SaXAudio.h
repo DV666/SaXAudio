@@ -122,6 +122,7 @@ namespace SaXAudio
         };
 
         vector<GarbageBankEntry> m_garbageBanks;
+        INT64 m_lastStatLogTime = 0; // TO DELETE
 
         static void DecodeOgg(const INT32 bankID, stb_vorbis* vorbis);
         void RemoveVoice(const INT32 voiceID);
