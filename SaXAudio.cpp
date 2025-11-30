@@ -329,52 +329,43 @@ namespace SaXAudio
         return m_bankCounter++;
     }
 
-    static mt19937 gen { std::random_device{}() };
+    /*static mt19937 gen {std::random_device{}()};
     void DeleteBufferDelayed(FLOAT* buffer, INT32 bankID)
     {
         INT32 rng = uniform_int_distribution<> { 0, 1000 }(gen);
         this_thread::sleep_for(chrono::milliseconds(1000 + rng));
         Log(bankID, 0, "[DeleteBufferDelayed]");
         delete[] buffer;
-    }
+    }*/
 
     void SaXAudio::RemoveBankEntry(const INT32 bankID)
     {
         lock_guard<mutex> lock(m_bankMutex);
 
-        Log(bankID, 0, "[RemoveBankEntry] Scheduled for delete");
+        Log(bankID, 0, "[RemoveBankEntry] Scheduled for GC");
 
         BankData* data = GetEntry(data, m_bank, bankID);
         if (!data) return;
+
         data->autoRemove = true;
         data->disposed = true;
 
         if (m_XAudio)
         {
-            // Si une voix l'utilise encore, on annule (le système autoRemove repassera plus tard)
             for (auto& it : m_voices)
             {
                 if (it.second->BankID == bankID) return;
             }
         }
 
-        INT64 deleteTime = GetTime() + 3000;
+        // On planifie pour plus tard (1000ms suffit)
+        INT64 deleteTime = GetTime() + 1000;
         m_garbageBanks.push_back({ bankID, deleteTime });
 
-        // Free the audio buffer
-        if (data->buffer)
-        {
-            thread deleteBuffer(DeleteBufferDelayed, data->buffer, bankID);
-            deleteBuffer.detach();
-            data->buffer = nullptr;
-        }
-        // onDecodedCallback guarantied to be called
-        if (data->onDecodedCallback)
-        {
-            (*data->onDecodedCallback)(bankID, data->Oggbuffer);
-            data->onDecodedCallback = nullptr;
-        }
-        m_bank.erase(bankID);
+        // --- MODIFICATION CRITIQUE ---
+        // 1. NE PAS appeler le callback ici (mauvais thread)
+        // 2. NE PAS faire m_bank.erase(bankID) ici (crash mutex)
+        // On laisse Update() tout gérer.
     }
 
     void SaXAudio::AutoRemoveBank(const INT32 bankID)
@@ -1533,30 +1524,33 @@ namespace SaXAudio
                     {
                         INT32 id = it->bankID;
 
-                        // Récupération sécurisée
                         BankData* data = nullptr;
-                        // Note: ta macro GetEntry déclare une variable locale 'it_data', attention au scope.
-                        // On le fait manuellement ici pour être sûr.
                         auto mapIt = m_bank.find(id);
                         if (mapIt != m_bank.end()) data = &mapIt->second;
 
                         if (data)
                         {
+                            // --- FIX CRITIQUE : LE CALLBACK EST ICI ---
+                            // On est sur le Main Thread (via Update), donc on peut parler au C# sans crash.
+                            if (data->onDecodedCallback)
+                            {
+                                (*data->onDecodedCallback)(id, data->Oggbuffer);
+                                data->onDecodedCallback = nullptr;
+                            }
+                            // ------------------------------------------
+
                             Log(id, 0, "[GC] Finalizing Bank deletion");
 
-                            // Suppression réelle du buffer audio
                             if (data->buffer)
                             {
                                 delete[] data->buffer;
                                 data->buffer = nullptr;
                             }
 
-                            // Suppression de la banque (et destruction du decodingMutex)
-                            // C'est safe maintenant car WaitForDecoding est forcément fini depuis >1000ms
+                            // Suppression sûre
                             m_bank.erase(id);
                         }
 
-                        // On retire de la liste d'attente
                         it = m_garbageBanks.erase(it);
                     }
                     else
