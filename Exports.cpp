@@ -188,12 +188,11 @@ namespace SaXAudio
             memcmp(header->data, "data", 4) != 0)
             return 0;
 
-        // Check supported formats
+        // Check supported formats (PCM and IEEE Float 32-bit)
         if (header->audioFormat != WAVE_FORMAT_PCM &&
             header->audioFormat != WAVE_FORMAT_IEEE_FLOAT)
             return 0;
 
-        // Check supported bit depths
         if (header->audioFormat == WAVE_FORMAT_PCM)
         {
             if (header->bitsPerSample != 8 && header->bitsPerSample != 16 && header->bitsPerSample != 24 && header->bitsPerSample != 32)
@@ -209,54 +208,97 @@ namespace SaXAudio
         UINT32 bytesPerSample = header->bitsPerSample / 8;
         UINT32 totalSamples = header->dataSize / (header->channels * bytesPerSample);
 
-        // Allocate buffer for float data (always 32-bit float output)
-        FLOAT* data = new FLOAT[totalSamples * header->channels];
+        // --- FIX MONO->STEREO : Détermine le nombre de canaux cible ---
+        // Si le fichier est Mono (1), nous le traitons comme Stéréo (2). Sinon, nous conservons le compte original (2, 5.1, 7.1...)
+        UINT32 targetChannels = (header->channels == 1) ? 2 : header->channels;
+
+        // Alloue le buffer de sortie (toujours FLOAT 32-bit)
+        FLOAT* data = new FLOAT[totalSamples * targetChannels];
         const BYTE* audioData = buffer + sizeof(WavHeader);
 
-        // Convert based on input format
-        if (header->audioFormat == WAVE_FORMAT_IEEE_FLOAT && header->bitsPerSample == 32)
-        {
-            // Already in correct format, validate format requirements
-            UINT16 expectedBlockAlign = header->channels * 32 / 8;
-            UINT32 expectedByteRate = header->sampleRate * expectedBlockAlign;
+        BOOL isMonoToStereoConversion = (header->channels == 1 && targetChannels == 2);
 
-            if (header->blockAlign != expectedBlockAlign || header->byteRate != expectedByteRate)
+        if (isMonoToStereoConversion)
+        {
+            // --- CONVERSION MONO VERS STEREO (Duplication L=R) ---
+            FLOAT* tempMono = new FLOAT[totalSamples];
+
+            // 1. Convertir PCM/Float Mono en Float 32-bit Mono
+            if (header->audioFormat == WAVE_FORMAT_IEEE_FLOAT && header->bitsPerSample == 32)
             {
-                delete[] data;
-                return 0;
+                memcpy(tempMono, audioData, header->dataSize);
+            }
+            else if (header->audioFormat == WAVE_FORMAT_PCM)
+            {
+                switch (header->bitsPerSample)
+                {
+                case 8:  ConvertPCM8ToFloat(audioData, tempMono, totalSamples); break;
+                case 16: ConvertPCM16ToFloat(reinterpret_cast<const INT16*>(audioData), tempMono, totalSamples); break;
+                case 24: ConvertPCM24ToFloat(audioData, tempMono, totalSamples); break;
+                case 32: ConvertPCM32ToFloat(reinterpret_cast<const INT32*>(audioData), tempMono, totalSamples); break;
+                default: delete[] tempMono; delete[] data; return 0;
+                }
+            }
+            else
+            {
+                delete[] tempMono; delete[] data; return 0;
             }
 
-            // Just copy the data
-            memcpy(data, audioData, header->dataSize);
-        }
-        else if (header->audioFormat == WAVE_FORMAT_PCM)
-        {
-            // Convert PCM to float
-            UINT32 totalSampleCount = totalSamples * header->channels;
-
-            switch (header->bitsPerSample)
+            // 2. Dupliquer le signal Mono pour créer le buffer Stéréo (L=R)
+            for (UINT32 i = 0; i < totalSamples; i++)
             {
-            case 8:
-                ConvertPCM8ToFloat(audioData, data, totalSampleCount);
-                break;
-            case 16:
-                ConvertPCM16ToFloat(reinterpret_cast<const INT16*>(audioData),
-                                   data, totalSampleCount);
-                break;
-            case 24:
-                ConvertPCM24ToFloat(audioData, data, totalSampleCount);
-                break;
-            case 32:
-                ConvertPCM32ToFloat(reinterpret_cast<const INT32*>(audioData),
-                                   data, totalSampleCount);
-                break;
-            default:
-                delete[] data;
-                return 0;
+                data[i * 2] = tempMono[i];     // Gauche
+                data[i * 2 + 1] = tempMono[i]; // Droite
+            }
+            delete[] tempMono;
+        }
+        else
+        {
+            // --- CAS STANDARD (Stéréo, Surround, ou Float direct) ---
+
+            if (header->audioFormat == WAVE_FORMAT_IEEE_FLOAT && header->bitsPerSample == 32)
+            {
+                // Validation du format Float
+                UINT16 expectedBlockAlign = header->channels * 32 / 8;
+                UINT32 expectedByteRate = header->sampleRate * expectedBlockAlign;
+
+                if (header->blockAlign != expectedBlockAlign || header->byteRate != expectedByteRate)
+                {
+                    delete[] data;
+                    return 0;
+                }
+                // Copie directe
+                memcpy(data, audioData, header->dataSize);
+            }
+            else if (header->audioFormat == WAVE_FORMAT_PCM)
+            {
+                // Conversion PCM standard (conserve le nombre de canaux)
+                UINT32 totalSampleCount = totalSamples * header->channels;
+
+                switch (header->bitsPerSample)
+                {
+                case 8:
+                    ConvertPCM8ToFloat(audioData, data, totalSampleCount);
+                    break;
+                case 16:
+                    ConvertPCM16ToFloat(reinterpret_cast<const INT16*>(audioData),
+                                       data, totalSampleCount);
+                    break;
+                case 24:
+                    ConvertPCM24ToFloat(audioData, data, totalSampleCount);
+                    break;
+                case 32:
+                    ConvertPCM32ToFloat(reinterpret_cast<const INT32*>(audioData),
+                                       data, totalSampleCount);
+                    break;
+                default:
+                    delete[] data;
+                    return 0;
+                }
             }
         }
 
-        return SaXAudio::Instance.AddBankData(data, header->channels, header->sampleRate, totalSamples);
+        return SaXAudio::Instance.AddBankData(data, targetChannels, header->sampleRate, totalSamples);
     }
 
     /// <summary>

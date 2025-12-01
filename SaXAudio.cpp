@@ -66,6 +66,24 @@ namespace SaXAudio
             return false;
         }
 
+        // --- AJOUT POUR ACTIVER LE DEBUG XAUDIO2 ---
+#ifdef _DEBUG
+        Log(0, 0, "[Init] Enabling XAudio2 Debug Configuration");
+
+        XAUDIO2_DEBUG_CONFIGURATION debugConfig = {};
+
+        // Enregistrement des erreurs, avertissements, infos et détails
+        debugConfig.TraceMask = XAUDIO2_LOG_ERRORS | XAUDIO2_LOG_WARNINGS | XAUDIO2_LOG_INFO | XAUDIO2_LOG_DETAIL;
+
+        // Arrêt du débogueur sur les erreurs
+        debugConfig.BreakMask = XAUDIO2_LOG_ERRORS;
+
+        // LIGNE RETIRÉE : debugConfig.ReportThreadScope = TRUE; 
+
+        m_XAudio->SetDebugConfiguration(&debugConfig, nullptr);
+#endif
+        // -----------------------------------------------------------
+
         // Create mastering voice
         IXAudio2MasteringVoice* masteringVoice;
         hr = m_XAudio->CreateMasteringVoice(&masteringVoice, 0, 48000);
@@ -123,14 +141,23 @@ namespace SaXAudio
     void ClearVoiceEffects(AudioVoice* voice)
     {
         if (!voice || !voice->SourceVoice) return;
-        
-        // First disable all effects
-        for (int i = 0; i < 3; i++)
-        {
-            voice->SourceVoice->DisableEffect(i);
-        }
 
-        // Then release COM objects
+        voice->SourceVoice->SetEffectChain(nullptr);
+        // --- CORRECTION ICI ---
+        // On vérifie d'abord s'il y a des effets à désactiver.
+        // Si EffectCount est 0 ou si le pointeur est null, la voix n'a pas de chaîne d'effets.
+        if (voice->EffectData.effectChain.pEffectDescriptors != nullptr &&
+            voice->EffectData.effectChain.EffectCount > 0)
+        {
+            // On ne boucle que sur le nombre d'effets réellement présents
+            for (UINT32 i = 0; i < voice->EffectData.effectChain.EffectCount; i++)
+            {
+                voice->SourceVoice->DisableEffect(i);
+            }
+        }
+        // ----------------------
+
+        // Then release COM objects (Ceci reste inchangé)
         for (int i = 0; i < 3; i++)
         {
             if (voice->EffectData.descriptors[i].pEffect)
@@ -139,6 +166,8 @@ namespace SaXAudio
                 voice->EffectData.descriptors[i].pEffect = nullptr;
             }
         }
+
+        // Nettoyage de la structure
         voice->EffectData.effectChain.pEffectDescriptors = nullptr;
         voice->EffectData.effectChain.EffectCount = 0;
 
@@ -545,23 +574,24 @@ namespace SaXAudio
     {
         int error;
         stb_vorbis* vorbis = stb_vorbis_open_memory(buffer, length, &error, NULL);
-
-        if (!vorbis)
-            return FALSE;
+        if (!vorbis) return FALSE;
 
         lock_guard<mutex> bankLock(m_bankMutex);
         BankData* data = GetEntry(data, m_bank, bankID);
         if (!data) return FALSE;
 
         data->Oggbuffer = buffer;
-
-        // Get file info
         stb_vorbis_info info = stb_vorbis_get_info(vorbis);
-        data->channels = info.channels;
-        data->sampleRate = info.sample_rate;
 
-        // Get total samples count and allocate the buffer
+        // --- CORRECTION ---
+        // On force 2 canaux si la source est mono
+        data->channels = (info.channels == 1) ? 2 : info.channels;
+        // ------------------
+
+        data->sampleRate = info.sample_rate;
         data->totalSamples = stb_vorbis_stream_length_in_samples(vorbis);
+
+        // Allocation (sera maintenant double si c'était du mono)
         data->buffer = new FLOAT[data->totalSamples * data->channels];
 
         thread decode(DecodeOgg, bankID, vorbis);
@@ -757,7 +787,6 @@ namespace SaXAudio
             if (!bus || !bus->voice) return;
             data = bus;
             xVoice = bus->voice;
-            channels = SaXAudio::Instance.m_masterDetails.InputChannels;
         }
         else
         {
@@ -773,7 +802,6 @@ namespace SaXAudio
 
             data = &audioVoice->EffectData;
             xVoice = audioVoice->SourceVoice;
-            if (audioVoice->BankData) channels = audioVoice->BankData->channels;
         }
 
         // --- 2. Lazy Initialization ---
@@ -784,9 +812,7 @@ namespace SaXAudio
             HRESULT hr = XAudio2CreateReverb(&data->descriptors[CHAIN_REVERB].pEffect);
             if (FAILED(hr)) { Log(0, 0, "Failed to create Reverb", hr); return; }
 
-            data->descriptors[CHAIN_REVERB].InitialState = TRUE;
-
-            // CORRECTION CRITIQUE : On force le respect des canaux de la voix
+            data->descriptors[CHAIN_REVERB].InitialState = FALSE;
             data->descriptors[CHAIN_REVERB].OutputChannels = channels;
 
             if (!isBus && audioVoice) UpdateVoiceEffectChain(audioVoice);
@@ -891,7 +917,15 @@ namespace SaXAudio
 
         if (fade <= 0)
         {
-            voice->DisableEffect(CHAIN_REVERB);
+            // --- CORRECTION CRASH ---
+            // On vérifie que l'effet existe ET que la chaîne est active sur la voix
+            if (data->descriptors[CHAIN_REVERB].pEffect != nullptr &&
+                data->effectChain.EffectCount > 0)
+            {
+                // Dans votre logique dynamique, la Reverb est toujours le 1er effet (index 0) si elle est présente
+                voice->DisableEffect(0);
+            }
+            // ------------------------
             return;
         }
 
@@ -969,7 +1003,6 @@ namespace SaXAudio
             if (!bus || !bus->voice) return;
             data = bus;
             xVoice = bus->voice;
-            channels = SaXAudio::Instance.m_masterDetails.InputChannels;
         }
         else
         {
@@ -980,7 +1013,6 @@ namespace SaXAudio
             if (!audioVoice || !audioVoice->SourceVoice) return;
             data = &audioVoice->EffectData;
             xVoice = audioVoice->SourceVoice;
-            if (audioVoice->BankData) channels = audioVoice->BankData->channels;
         }
 
         // --- Lazy Creation ---
@@ -990,9 +1022,7 @@ namespace SaXAudio
             HRESULT hr = CreateFX(__uuidof(FXEQ), &data->descriptors[CHAIN_EQ].pEffect);
             if (FAILED(hr)) { Log(0, 0, "Failed to create EQ", hr); return; }
 
-            data->descriptors[CHAIN_EQ].InitialState = TRUE;
-
-            // CORRECTION CRITIQUE : On utilise la variable locale 'channels'
+            data->descriptors[CHAIN_EQ].InitialState = FALSE;
             data->descriptors[CHAIN_EQ].OutputChannels = channels;
 
             if (!isBus && audioVoice) UpdateVoiceEffectChain(audioVoice);
@@ -1039,7 +1069,21 @@ namespace SaXAudio
 
         if (fade <= 0)
         {
-            voice->DisableEffect(CHAIN_EQ);
+            // --- CORRECTION CRASH & INDEX ---
+            if (data->descriptors[CHAIN_EQ].pEffect != nullptr &&
+                data->effectChain.EffectCount > 0)
+            {
+                // Calcul de l'index réel dynamique
+                UINT32 realIndex = 0;
+                if (data->descriptors[CHAIN_REVERB].pEffect != nullptr) realIndex++;
+
+                // Sécurité : on ne désactive que si l'index est valide dans la chaîne actuelle
+                if (realIndex < data->effectChain.EffectCount)
+                {
+                    voice->DisableEffect(realIndex);
+                }
+            }
+            // --------------------------------
             return;
         }
 
@@ -1096,7 +1140,6 @@ namespace SaXAudio
             if (!bus || !bus->voice) return;
             data = bus;
             xVoice = bus->voice;
-            channels = SaXAudio::Instance.m_masterDetails.InputChannels;
         }
         else
         {
@@ -1107,7 +1150,6 @@ namespace SaXAudio
             if (!audioVoice || !audioVoice->SourceVoice) return;
             data = &audioVoice->EffectData;
             xVoice = audioVoice->SourceVoice;
-            if (audioVoice->BankData) channels = audioVoice->BankData->channels;
         }
 
         // --- Lazy Creation ---
@@ -1118,9 +1160,7 @@ namespace SaXAudio
             HRESULT hr = CreateFX(__uuidof(FXEcho), &data->descriptors[CHAIN_ECHO].pEffect, &init, sizeof(FXECHO_INITDATA));
             if (FAILED(hr)) { Log(0, 0, "Failed to create Echo", hr); return; }
 
-            data->descriptors[CHAIN_ECHO].InitialState = TRUE;
-
-            // CORRECTION CRITIQUE : On utilise 'channels'
+            data->descriptors[CHAIN_ECHO].InitialState = FALSE;
             data->descriptors[CHAIN_ECHO].OutputChannels = channels;
 
             if (!isBus && audioVoice) UpdateVoiceEffectChain(audioVoice);
@@ -1163,7 +1203,21 @@ namespace SaXAudio
 
         if (fade <= 0)
         {
-            voice->DisableEffect(CHAIN_ECHO);
+            // --- CORRECTION CRASH & INDEX ---
+            if (data->descriptors[CHAIN_ECHO].pEffect != nullptr &&
+                data->effectChain.EffectCount > 0)
+            {
+                // Calcul de l'index réel dynamique
+                UINT32 realIndex = 0;
+                if (data->descriptors[CHAIN_REVERB].pEffect != nullptr) realIndex++;
+                if (data->descriptors[CHAIN_EQ].pEffect != nullptr) realIndex++;
+
+                if (realIndex < data->effectChain.EffectCount)
+                {
+                    voice->DisableEffect(realIndex);
+                }
+            }
+            // --------------------------------
             return;
         }
 
@@ -1249,7 +1303,6 @@ namespace SaXAudio
 
             // BankEntry removed
             if (!data || data->disposed || !data->buffer) break;
-
             {
                 lock_guard<mutex> lock(data->decodingMutex);
 

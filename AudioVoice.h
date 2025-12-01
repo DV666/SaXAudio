@@ -96,7 +96,7 @@ namespace SaXAudio
 
     private:
         UINT64 CalculateCurrentPosition();
-        static void WaitForDecoding(AudioVoice* voice);
+        static void WaitForDecoding(INT32 voiceID, INT32 bankID, UINT32 playBegin);
 
         static void OnFadeVolume(INT64 voiceID, UINT32 count, FLOAT* newValues, BOOL hasFinished);
         static void OnFadeSpeed(INT64 voiceID, UINT32 count, FLOAT* newValues, BOOL hasFinished);

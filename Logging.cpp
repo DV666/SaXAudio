@@ -23,12 +23,14 @@
 #pragma once
 
 #include "Includes.h"
+#include "SaXAudio.h"
 
 #ifdef LOGGING
 
 #include <fstream>
 #include <iomanip>
 #include <queue>
+#include <sstream>
 
 namespace SaXAudio
 {
@@ -39,6 +41,7 @@ namespace SaXAudio
         INT32 voiceID;
         string message;
         HRESULT result;
+        thread::id threadID;
     };
 
     struct LogData
@@ -87,9 +90,18 @@ namespace SaXAudio
                 INT32 hours = minutes / 60;
 
                 g_logData.file << hours << ":"
-                    << setw(2) << setfill('0') << right  << minutes % 60 << ":"
-                    << setw(2) << setfill('0') << right  << seconds % 60 << "."
-                    << setw(3) << setfill('0') << right  << millisec % 1000;
+                    << setw(2) << setfill('0') << right << minutes % 60 << ":"
+                    << setw(2) << setfill('0') << right << seconds % 60 << "."
+                    << setw(3) << setfill('0') << right << millisec % 1000;
+
+                // --- AFFICHAGE DU THREAD ID ---
+                stringstream ss;
+                ss << entry.threadID;
+                string tid = ss.str();
+                // On garde juste les 6 derniers caractères pour que ce soit lisible
+                if (tid.length() > 6) tid = tid.substr(tid.length() - 6);
+                g_logData.file << " | [" << setw(6) << left << tid << "]";
+                // ------------------------------
 
                 if (entry.bankID > 0)
                     g_logData.file << " | " << setw(5) << setfill(' ') << left << ("B" + to_string(entry.bankID));
@@ -142,9 +154,13 @@ namespace SaXAudio
 
         INT64 timestamp = GetTime() - g_logData.startTime;
 
+        // Capture du Thread ID actuel
+        thread::id currentThreadId = this_thread::get_id();
+
         {
             lock_guard<mutex> lock(g_logData.mutex);
-            g_logData.queue.push({ timestamp, bankID, voiceId, message, result });
+            // Ajout de currentThreadId dans la structure
+            g_logData.queue.push({ timestamp, bankID, voiceId, message, result, currentThreadId });
         }
 
         g_logData.condition.notify_one();
