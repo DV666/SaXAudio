@@ -101,20 +101,31 @@ namespace SaXAudio
     void AudioVoice::WaitForDecoding(AudioVoice* voice)
     {
         Log(voice->BankID, voice->VoiceID, "[Start] Waiting for decoded data");
-        unique_lock<mutex> lock(voice->BankData->decodingMutex);
-        if (voice->BankData->decodedSamples == 0)
+
+        // Portée du lock limitée
         {
-            if (!voice->BankData->decodingPerform.wait_for(lock, chrono::milliseconds(500), [voice] { return voice->BankData->decodedSamples > voice->Buffer.PlayBegin; }))
+            unique_lock<mutex> lock(voice->BankData->decodingMutex);
+            if (voice->BankData->decodedSamples == 0)
             {
-                Log(voice->BankID, voice->VoiceID, " ERROR | [Start] Failed waiting for decoded data, timed out");
-                SaXAudio::Instance.RemoveVoice(voice->VoiceID);
-                return;
+                // On attend
+                if (!voice->BankData->decodingPerform.wait_for(lock, chrono::milliseconds(500), [voice] { return voice->BankData->decodedSamples > voice->Buffer.PlayBegin; }))
+                {
+                    // ECHEC : TIMEOUT
+                    lock.unlock(); // <--- CRUCIAL : On relâche le verrou AVANT de détruire la voix
+
+                    Log(voice->BankID, voice->VoiceID, " ERROR | [Start] Failed waiting for decoded data, timed out");
+                    SaXAudio::Instance.RemoveVoice(voice->VoiceID);
+                    return;
+                }
             }
+            // SUCCES : On a les données, on relâche le verrou tout de suite, on n'en a plus besoin.
+            lock.unlock();
         }
 
         // Sound has been paused while we were waiting
         if (voice->m_pauseStack > 0) return;
 
+        // Maintenant on peut appeler Start() ou RemoveVoice() sans risque pour le mutex BankData
         HRESULT hr = voice->SourceVoice->Start();
         if (FAILED(hr))
         {
