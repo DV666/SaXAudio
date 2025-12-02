@@ -1385,4 +1385,39 @@ namespace SaXAudio
 
         OnFadeEcho(context, count, newValues, hasFinished);
     }
+
+    void SaXAudio::AddToGarbage(INT32 voiceID)
+    {
+        // C'est appelé depuis le thread Audio haute priorité (OnBufferEnd)
+        // On fait le minimum vital : stocker l'ID.
+        std::lock_guard<std::mutex> lock(m_garbageMutex);
+        m_garbageQueue.push(voiceID);
+    }
+
+    void SaXAudio::FlushGarbage()
+    {
+        // Cette fonction sera appelée par le C# Main Thread.
+        // 1. On récupère tout ce qu'il y a à détruire dans une liste locale
+        // On fait ça pour ne pas bloquer le mutex pendant la destruction (qui est lente)
+        std::queue<INT32> voicesToKill;
+        {
+            std::lock_guard<std::mutex> lock(m_garbageMutex);
+            if (m_garbageQueue.empty()) return; // Rien à faire
+
+            // On swap pour vider la queue principale instantanément
+            m_garbageQueue.swap(voicesToKill);
+        }
+
+        // 2. On détruit les voix une par une sur le Main Thread
+        while (!voicesToKill.empty())
+        {
+            INT32 id = voicesToKill.front();
+            voicesToKill.pop();
+
+            // C'est SAFE car on est sur le Main Thread :
+            // - Mono accepte le callback OnVoiceFinished
+            // - XAudio accepte DestroyVoice (car on n'est pas dans un callback audio)
+            RemoveVoice(id);
+        }
+    }
 }

@@ -609,15 +609,17 @@ namespace SaXAudio
 
     void __stdcall AudioVoice::OnBufferEnd(void* pBufferContext)
     {
-        // We don't want to do anything when temporary flushing the buffer
         if (m_tempFlush > 0)
         {
-            Log(BankID, VoiceID, "[OnBufferEnd] Flush reset");
+            // Log(BankID, VoiceID, "[OnBufferEnd] Flush reset"); // Commenté pour réduire le spam si besoin
             m_tempFlush--;
             return;
         }
-        Log(BankID, VoiceID, "[OnBufferEnd] Voice finished playing");
 
-        SaXAudio::Instance.RemoveVoice(VoiceID);
+        // Log(BankID, VoiceID, "[OnBufferEnd] Voice finished. Adding to garbage.");
+
+        // CORRECTIF SÉCURISÉ :
+        // On ne détruit rien ici. On dit juste au moteur "C'est fini, occupe-toi de moi quand tu as le temps".
+        SaXAudio::Instance.AddToGarbage(VoiceID);
     }
 }

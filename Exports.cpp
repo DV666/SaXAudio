@@ -99,6 +99,11 @@ namespace SaXAudio
         SaXAudio::Instance.Protect(voiceID);
     }
 
+    EXPORT void FlushGarbage()
+    {
+        SaXAudio::Instance.FlushGarbage();
+    }
+
     // WAV file header structures
 #pragma pack(push, 1)
     struct WavHeader

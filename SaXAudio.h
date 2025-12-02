@@ -67,6 +67,8 @@ namespace SaXAudio
         SaXAudio(const SaXAudio&) = delete;
         SaXAudio& operator=(const SaXAudio&) = delete;
 
+        std::queue<INT32> m_garbageQueue;
+        std::mutex m_garbageMutex;
     public:
         static SaXAudio& Instance;
 
@@ -115,6 +117,8 @@ namespace SaXAudio
         UINT32 GetVoiceCount(const INT32 bankID = 0, const INT32 busID = 0);
         UINT32 GetBankCount();
 
+        void AddToGarbage(INT32 voiceID);
+        void FlushGarbage();
     private:
         static void DecodeOgg(const INT32 bankID, stb_vorbis* vorbis);
         void RemoveVoice(const INT32 voiceID);
