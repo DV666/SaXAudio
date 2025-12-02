@@ -757,7 +757,7 @@ namespace SaXAudio
         IXAudio2Voice* voice = nullptr;
         EffectData* data = nullptr;
         GetEffectData(voiceID, isBus, &voice, &data);
-        if (!voice) return;
+        if (!voice || !data || !data->effectChain.pEffectDescriptors) return;
 
         if (fade <= 0)
         {
@@ -899,7 +899,7 @@ namespace SaXAudio
         IXAudio2Voice* voice = nullptr;
         EffectData* data = nullptr;
         GetEffectData(voiceID, isBus, &voice, &data);
-        if (!voice) return;
+        if (!voice || !data || !data->effectChain.pEffectDescriptors) return;
 
         if (fade <= 0)
         {
@@ -1015,7 +1015,7 @@ namespace SaXAudio
         IXAudio2Voice* voice = nullptr;
         EffectData* data = nullptr;
         GetEffectData(voiceID, isBus, &voice, &data);
-        if (!voice) return;
+        if (!voice || !data || !data->effectChain.pEffectDescriptors) return;
 
         if (fade <= 0)
         {
