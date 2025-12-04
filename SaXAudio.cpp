@@ -33,6 +33,22 @@ namespace SaXAudio
 
     SaXAudio& SaXAudio::Instance = SaXAudio::getInstance();
 
+    void ReleaseEffectDescriptors(EffectData& data)
+    {
+        for (auto& descriptor : data.descriptors)
+        {
+            if (descriptor.pEffect)
+            {
+                descriptor.pEffect->Release();
+                descriptor.pEffect = nullptr;
+            }
+            descriptor = { nullptr, false, 0 };
+        }
+
+        data.effectChain = { 0 };
+        data.effectChain.pEffectDescriptors = nullptr;
+    }
+
     BOOL SaXAudio::Init()
     {
         if (m_XAudio)
@@ -174,6 +190,7 @@ namespace SaXAudio
             return;
         Log(0, 0, "[PauseAll]");
 
+        lock_guard<mutex> voiceLock(m_voiceMutex);
         for (auto& it : m_voices)
         {
             if (!it.second->IsProtected && (busID == 0 || it.second->BusID == busID))
@@ -187,6 +204,7 @@ namespace SaXAudio
             return;
         Log(0, 0, "[ResumeAll]");
 
+        lock_guard<mutex> voiceLock(m_voiceMutex);
         for (auto& it : m_voices)
         {
             if (!it.second->IsProtected && (busID == 0 || it.second->BusID == busID))
@@ -200,6 +218,7 @@ namespace SaXAudio
             return;
         Log(0, 0, "[StopAll]");
 
+        lock_guard<mutex> voiceLock(m_voiceMutex);
         for (auto& it : m_voices)
         {
             if (!it.second->IsProtected && (busID == 0 || it.second->BusID == busID))
@@ -237,7 +256,9 @@ namespace SaXAudio
 
     void SaXAudio::RemoveBankEntry(const INT32 bankID)
     {
-        lock_guard<mutex> lock(m_bankMutex);
+        lock(m_bankMutex, m_voiceMutex);
+        lock_guard<mutex> bankLock(m_bankMutex, adopt_lock);
+        lock_guard<mutex> voiceLock(m_voiceMutex, adopt_lock);
 
         BankData* data = GetEntry(data, m_bank, bankID);
         if (!data) return;
@@ -315,7 +336,9 @@ namespace SaXAudio
     {
         if (!m_XAudio)
             return;
-        lock_guard<mutex> lock(m_busMutex);
+        lock(m_busMutex, m_voiceMutex);
+        lock_guard<mutex> busLock(m_busMutex, adopt_lock);
+        lock_guard<mutex> voiceLock(m_voiceMutex, adopt_lock);
 
         Log(0, 0, "[RemoveBus] " + to_string(busID));
 
@@ -329,6 +352,7 @@ namespace SaXAudio
         }
 
         bus->voice->DestroyVoice();
+        ReleaseEffectDescriptors(*bus);
         m_buses.erase(busID);
     }
 
@@ -1149,8 +1173,9 @@ namespace SaXAudio
         BOOL autoRemove = false;
         INT32 bankID = 0;
         {
-            lock_guard<mutex> lock(m_voiceMutex);
-
+            lock(m_voiceMutex, m_bankMutex);
+            lock_guard<mutex> voiceLock(m_voiceMutex, adopt_lock);
+            lock_guard<mutex> bankLock(m_bankMutex, adopt_lock);
             AudioVoice* voice = nullptr;
             auto it_voice = m_voices.find(voiceID);
             if (it_voice != m_voices.end())
@@ -1195,7 +1220,7 @@ namespace SaXAudio
             m_voicePool.push(voice);
             m_voices.erase(voiceID);
 
-            Log(voice->BankID, voiceID, "[RemoveVoice] Deleted voice");
+            Log(bankID, voiceID, "[RemoveVoice] Deleted voice");
         }
 
         if (autoRemove)

@@ -517,6 +517,8 @@ namespace SaXAudio
         Fader::Instance.StopFade(m_panningFadeID);
         Fader::Instance.StopFade(m_pauseFadeID);
 
+        ReleaseEffectDescriptors(EffectData);
+
         m_volumeFadeID = 0;
         m_speedFadeID = 0;
         m_panningFadeID = 0;
