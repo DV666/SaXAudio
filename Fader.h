@@ -70,6 +70,7 @@ namespace SaXAudio
         UINT32 StartFade(FLOAT currentValue, FLOAT target, const FLOAT duration, const OnFadeCallback onFade, INT64 context);
         UINT32 StartFadeMulti(const UINT32 count, FLOAT* currentValues, FLOAT* targets, const FLOAT duration, const OnFadeCallback onFade, INT64 context);
         void StopFade(const UINT32 fadeID);
+        void StopAll();
         void PauseFade(const UINT32 fadeID);
         void ResumeFade(const UINT32 fadeID);
     };

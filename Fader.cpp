@@ -143,6 +143,22 @@ namespace SaXAudio
         m_jobs.erase(fadeID);
     }
 
+    void Fader::StopAll()
+    {
+        lock_guard<mutex> lock(m_jobsMutex);
+
+        for (auto& job : m_jobs)
+        {
+            delete[] job.second.current;
+            delete[] job.second.target;
+            delete[] job.second.rate;
+        }
+
+        m_jobs.clear();
+        m_jobsCounter = 1;
+        m_running = false;
+    }
+
     void Fader::PauseFade(const UINT32 fadeID)
     {
         if (fadeID == 0) return;
