@@ -526,9 +526,35 @@ namespace SaXAudio
         BusData* bus = GetEntry(bus, m_buses, busID);
 
         voice->EffectData.effectChain = { 3, voice->EffectData.descriptors };
-        voice->EffectData.descriptors[0] = { nullptr, false, data->channels };
-        voice->EffectData.descriptors[1] = { nullptr, false, data->channels };
-        voice->EffectData.descriptors[2] = { nullptr, false, data->channels };
+
+        // Configuration de base des descripteurs
+        for (int i = 0; i < 3; i++)
+        {
+            voice->EffectData.descriptors[i].InitialState = false; // Démarrer désactivé
+            voice->EffectData.descriptors[i].OutputChannels = data->channels;
+        }
+
+        // 1. REVERB : On crée seulement si le pointeur est vide
+        if (voice->EffectData.descriptors[CHAIN_REVERB].pEffect == nullptr)
+        {
+            HRESULT hr = XAudio2CreateReverb(&voice->EffectData.descriptors[CHAIN_REVERB].pEffect);
+            if (FAILED(hr)) Log(bankID, m_voiceCounter, "Failed to create reverb effect", hr);
+        }
+
+        // 2. EQ : On crée seulement si le pointeur est vide
+        if (voice->EffectData.descriptors[CHAIN_EQ].pEffect == nullptr)
+        {
+            HRESULT hr = CreateFX(__uuidof(FXEQ), &voice->EffectData.descriptors[CHAIN_EQ].pEffect);
+            if (FAILED(hr)) Log(bankID, m_voiceCounter, "Failed to create EQ effect", hr);
+        }
+
+        // 3. ECHO : On crée seulement si le pointeur est vide
+        if (voice->EffectData.descriptors[CHAIN_ECHO].pEffect == nullptr)
+        {
+            FXECHO_INITDATA init = { 3000 };
+            HRESULT hr = CreateFX(__uuidof(FXEcho), &voice->EffectData.descriptors[CHAIN_ECHO].pEffect, &init, sizeof(FXECHO_INITDATA));
+            if (FAILED(hr)) Log(bankID, m_voiceCounter, "Failed to create echo effect", hr);
+        }
 
         HRESULT hr = XAudio2CreateReverb(&voice->EffectData.descriptors[CHAIN_REVERB].pEffect);
         if (FAILED(hr))
@@ -1156,6 +1182,12 @@ namespace SaXAudio
             if (it_voice != m_voices.end())
                 voice = it_voice->second;
             if (!voice) return;
+
+            Fader::Instance.StopFade(voice->m_volumeFadeID);
+            Fader::Instance.StopFade(voice->m_speedFadeID);
+            Fader::Instance.StopFade(voice->m_panningFadeID);
+            Fader::Instance.StopFade(voice->m_pauseFadeID);
+
             bankID = voice->BankID;
             voice->BankID = 0;
 

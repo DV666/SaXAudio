@@ -32,11 +32,6 @@ namespace SaXAudio
     class AudioVoice : public IXAudio2VoiceCallback
     {
     private:
-        UINT32 m_volumeFadeID = 0;
-        UINT32 m_speedFadeID = 0;
-        UINT32 m_panningFadeID = 0;
-        UINT32 m_pauseFadeID = 0;
-
         atomic<UINT32> m_pauseStack = 0;
         INT64 m_positionOffset = 0;
         FLOAT m_volumeTarget = 0;
@@ -54,6 +49,11 @@ namespace SaXAudio
         FLOAT Volume = 1.0f;
         FLOAT Speed = 1.0f;
         FLOAT Panning = 0.0f;
+
+        UINT32 m_volumeFadeID = 0;
+        UINT32 m_speedFadeID = 0;
+        UINT32 m_panningFadeID = 0;
+        UINT32 m_pauseFadeID = 0;
 
         EffectData EffectData;
 

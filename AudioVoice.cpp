@@ -557,7 +557,8 @@ namespace SaXAudio
     void AudioVoice::OnFadeVolume(INT64 voiceID, UINT32 count, FLOAT* newValues, BOOL hasFinished)
     {
         AudioVoice* voice = SaXAudio::Instance.GetVoice((INT32)voiceID);
-        if (!voice) return;
+        if (!voice || !voice->SourceVoice) return;
+
         voice->SourceVoice->SetVolume(newValues[0]);
 
         if (hasFinished)
@@ -622,12 +623,12 @@ namespace SaXAudio
     {
         if (m_tempFlush > 0)
         {
-            // Log(BankID, VoiceID, "[OnBufferEnd] Flush reset"); // Commenté pour réduire le spam si besoin
+            Log(BankID, VoiceID, "[OnBufferEnd] Flush reset"); // Commenté pour réduire le spam si besoin
             m_tempFlush--;
             return;
         }
 
-        // Log(BankID, VoiceID, "[OnBufferEnd] Voice finished. Adding to garbage.");
+        Log(BankID, VoiceID, "[OnBufferEnd] Voice finished. Adding to garbage.");
 
         // CORRECTIF SÉCURISÉ :
         // On ne détruit rien ici. On dit juste au moteur "C'est fini, occupe-toi de moi quand tu as le temps".
