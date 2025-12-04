@@ -141,7 +141,29 @@ namespace SaXAudio
         if (!m_XAudio)
             return;
 
+        Fader::Instance.StopAll();
+
         m_XAudio->StopEngine();
+
+        {
+            lock_guard<mutex> busLock(m_busMutex);
+
+            for (auto& entry : m_buses)
+            {
+                BusData& bus = entry.second;
+                if (bus.voice)
+                {
+                    bus.voice->DestroyVoice();
+                    bus.voice = nullptr;
+                }
+
+                ReleaseEffectDescriptors(bus);
+            }
+
+            ReleaseEffectDescriptors(m_masteringBus);
+            m_buses.clear();
+        }
+
         m_XAudio->Release();
         m_XAudio = nullptr;
 
