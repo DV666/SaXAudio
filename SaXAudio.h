@@ -129,4 +129,6 @@ namespace SaXAudio
         static void OnFadeEcho(INT64 context, UINT32 count, FLOAT* newValues, BOOL hasFinished);
         static void OnFadeEchoDisable(INT64 context, UINT32 count, FLOAT* newValues, BOOL hasFinished);
     };
+
+    void ReleaseEffectDescriptors(EffectData& data);
 }
