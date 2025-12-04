@@ -256,7 +256,9 @@ namespace SaXAudio
 
     void SaXAudio::RemoveBankEntry(const INT32 bankID)
     {
-        scoped_lock<mutex, mutex> lock(m_bankMutex, m_voiceMutex);
+        lock(m_bankMutex, m_voiceMutex);
+        lock_guard<mutex> bankLock(m_bankMutex, adopt_lock);
+        lock_guard<mutex> voiceLock(m_voiceMutex, adopt_lock);
 
         BankData* data = GetEntry(data, m_bank, bankID);
         if (!data) return;
@@ -334,7 +336,9 @@ namespace SaXAudio
     {
         if (!m_XAudio)
             return;
-        scoped_lock<mutex, mutex> lock(m_busMutex, m_voiceMutex);
+        lock(m_busMutex, m_voiceMutex);
+        lock_guard<mutex> busLock(m_busMutex, adopt_lock);
+        lock_guard<mutex> voiceLock(m_voiceMutex, adopt_lock);
 
         Log(0, 0, "[RemoveBus] " + to_string(busID));
 
@@ -1169,7 +1173,9 @@ namespace SaXAudio
         BOOL autoRemove = false;
         INT32 bankID = 0;
         {
-            scoped_lock<mutex, mutex> lock(m_voiceMutex, m_bankMutex);
+            lock(m_voiceMutex, m_bankMutex);
+            lock_guard<mutex> voiceLock(m_voiceMutex, adopt_lock);
+            lock_guard<mutex> bankLock(m_bankMutex, adopt_lock);
             AudioVoice* voice = nullptr;
             auto it_voice = m_voices.find(voiceID);
             if (it_voice != m_voices.end())
