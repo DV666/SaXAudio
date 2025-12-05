@@ -117,6 +117,10 @@ namespace SaXAudio
         masteringVoice->GetVoiceDetails(&m_masterDetails);
         Log(0, 0, "[Init] Initialization complete. Version: " + version + " Channels: " + to_string(m_masterDetails.InputChannels) + " Sample rate: " + to_string(m_masterDetails.InputSampleRate));
 
+        m_gcRunning = true;
+        // On lance le thread sur notre fonction de boucle
+        m_gcThread = thread(&SaXAudio::GarbageCollectorLoop, this);
+
         return true;
     }
 
@@ -124,6 +128,13 @@ namespace SaXAudio
     {
         if (!m_XAudio)
             return;
+
+        m_gcRunning = false; // On lui dit de s'arrêter
+
+        if (m_gcThread.joinable())
+        {
+            m_gcThread.join(); // On attend qu'il ait fini son dernier tour (Blocant mais rapide)
+        }
 
         m_XAudio->StopEngine();
         m_XAudio->Release();
@@ -148,6 +159,24 @@ namespace SaXAudio
 
         m_voices.clear();
         m_masteringBus.voice = nullptr;
+    }
+
+    SaXAudio::~SaXAudio()
+    {
+        // 1. Arrêt du Garbage Collector (Thread interne)
+        m_gcRunning = false;
+        if (m_gcThread.joinable())
+        {
+            m_gcThread.join();
+        }
+
+        // 2. Nettoyage XAudio2
+        if (m_XAudio)
+        {
+            m_XAudio->StopEngine();
+            m_XAudio->Release(); // <-- On appelle Release() directement
+            m_XAudio = nullptr;
+        }
     }
 
     void SaXAudio::StopEngine()
@@ -1450,6 +1479,20 @@ namespace SaXAudio
             // - Mono accepte le callback OnVoiceFinished
             // - XAudio accepte DestroyVoice (car on n'est pas dans un callback audio)
             RemoveVoice(id);
+        }
+    }
+
+    void SaXAudio::GarbageCollectorLoop()
+    {
+        // Tant que le moteur tourne...
+        while (m_gcRunning)
+        {
+            // 1. On nettoie (C'est ta fonction existante)
+            FlushGarbage();
+
+            // 2. On dort 200ms (5 fois par seconde)
+            // C'est le rythme idéal que nous avons validé ensemble.
+            this_thread::sleep_for(chrono::milliseconds(200));
         }
     }
 }

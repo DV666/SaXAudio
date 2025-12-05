@@ -69,8 +69,13 @@ namespace SaXAudio
 
         std::queue<INT32> m_garbageQueue;
         std::mutex m_garbageMutex;
+
+        thread m_gcThread;           // Le thread qui fera le ménage
+        atomic<bool> m_gcRunning;    // Le bouton ON/OFF (Atomic pour être thread-safe)
+        void GarbageCollectorLoop(); // La fonction qui tournera en boucle
     public:
         static SaXAudio& Instance;
+        ~SaXAudio();
 
         OnFinishedCallback OnFinishedCallback = nullptr;
 
