@@ -56,6 +56,21 @@ namespace SaXAudio
 
         ofstream file;
         INT64 startTime = GetTime();
+
+        // AJOUT : Destructeur pour éviter le abort()
+        ~LogData()
+        {
+            if (workThread.joinable())
+            {
+                logging = false;
+                condition.notify_one();
+                workThread.join();
+            }
+            if (file.is_open())
+            {
+                file.close();
+            }
+        }
     };
 
     static LogData g_logData;

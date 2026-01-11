@@ -163,18 +163,22 @@ namespace SaXAudio
 
     SaXAudio::~SaXAudio()
     {
-        // 1. Arrêt du Garbage Collector (Thread interne)
+        // 1. Arrêt du Garbage Collector
         m_gcRunning = false;
         if (m_gcThread.joinable())
         {
             m_gcThread.join();
         }
 
-        // 2. Nettoyage XAudio2
+        // 2. Arrêt du Logger (AJOUT CRUCIAL)
+        // Cela permet de flusher les derniers logs avant la mort du process
+        StopLogging();
+
+        // 3. Nettoyage XAudio2
         if (m_XAudio)
         {
             m_XAudio->StopEngine();
-            m_XAudio->Release(); // <-- On appelle Release() directement
+            m_XAudio->Release();
             m_XAudio = nullptr;
         }
     }
